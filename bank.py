@@ -2,6 +2,10 @@ import Constants, web
 import pickle, time, timestamp
 from bs4 import BeautifulSoup
 
+import logging
+LOGGER = logging.getLogger('Bank')
+
+
 #I don't like how this function requires you send the source code of the bank
 #It should probably request the bank for itself or be set to private
 def getBankBalance(response):
@@ -26,7 +30,7 @@ def deposit(session, amount):
         source = web.post(session, Constants.NEO_BANK_INTEREST, postFields, Constants.NEO_BANK)
 
     else:
-        print("You don't have " + str(amount) + " to deposit!")
+        LOGGER.info("You don't have " + str(amount) + " to deposit!")
 
     return onHandBalance
 
@@ -43,10 +47,10 @@ def withdraw(session, amount):
 
     #insufficient funds
     else:
-        print("Insufficient Funds")
+        LOGGER.info("Insufficient Funds")
         return False
 
-def collectInterest(session, times):
+def collectInterest(session, times, resultDic:dict = {}):
     key = "interest"
 
     timeExpiry = times.get(key)
@@ -60,8 +64,9 @@ def collectInterest(session, times):
         postFields = {"type": "interest"}
         web.post(session, Constants.NEO_BANK_INTEREST, postFields, Constants.NEO_BANK)
 
-        print("Bank interest collected :)")
+        LOGGER.info("Bank interest collected :)")
         times[key] = timestamp.endOfDay()
+        resultDic[key] = {"Bank interest collected :)": "Done"}
 
         file = open('times.pkl', 'wb')
         pickle.dump(times, file)

@@ -1,3 +1,9 @@
+# Update
+
+Support Asyncio, Docker Container, Gmail notify.
+
+Please create a .env file to set your private information.
+
 # Neopet Helper
 This is a collection of python scripts that can be used to automate common Neopet tasks for you. At this time I've only uploaded a couple scripts. I have other scripts to perform dailies, get highscores in games, stock shops, shop wizard search, buy stocks, etc.
 
@@ -8,7 +14,7 @@ If there's a task you need done let me know and I'll try to get that for you soo
 ## How to use
 Basic python knowledge is needed but to get it running all you have to do is add your username and password to main.py and run it.
 
-## Dailies.py
+## Dailies.py (Update 2022/08/31)
 Runs the most common and lucrative Neopet daily activities. Currently it includes: <br>
 * Collecting bank interest
 * Buying daily allotment of stocks
@@ -19,6 +25,8 @@ Runs the most common and lucrative Neopet daily activities. Currently it include
 * TDMGPOP
 * Healing Springs
 * Advent Calendar
+* Pet Lab (Need to open this Map)
+* Island Training School (Default: Level, Auto buy codestone)
 * More to come :)
 
 ## Classes

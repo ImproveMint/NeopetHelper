@@ -6,20 +6,55 @@ too busy being an adult
 NOTES:
 Does not work with a pin
 '''
-
+import asyncio, logging
+from random import randrange
 import login, Constants, web, bank, stocks
+from trainingSchool import TrainingSchool
+from ShopWizard import ShopWizard
 import requests, time, timestamp, pickle
+import gmail
+import json
+
+import os
+from dotenv import load_dotenv
+
+load_dotenv(dotenv_path='.env') # container path
+USERNAME        = str(os.environ.get('USERNAME'))
+PASSWORD        = str(os.environ.get('PASSWORD'))
+FAIL_RETRY_SECOND   = int(os.environ.get('FAIL_RETRY_SECOND'))
+SUCCESS_NEXT_TIME   = int(os.environ.get('SUCCESS_NEXT_TIME'))
+PET_LAB2_PETNAME = str(os.environ.get('PET_LAB2_PETNAME'))
+PET_TRAINING_PETNAME = str(os.environ.get('PET_TRAINING_PETNAME'))
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+LOGGER = logging.getLogger('NeopetHelper')
 
 times = {}
+resultDic = {}
 
-def main():
+async def main():
     # Login details
-    username = ""
-    password = ""
+    username = USERNAME
+    password = PASSWORD
 
     session = requests.Session()
 
-    login.login(session, username, password)
+    result = login.login(session, username, password)
+    if not result:
+        LOGGER.info('Login Falied, send email to notify.') 
+        try: 
+            gmail.notify('error')
+        except:
+            LOGGER.error('send email error.')
+        LOGGER.info('next time to try it again, sleeping '+str(FAIL_RETRY_SECOND)+'s')
+        await asyncio.sleep(FAIL_RETRY_SECOND)
+        return # next time to login
+
     login.save_cookies(session)
 
     global times
@@ -28,30 +63,112 @@ def main():
     try:
         file = open('times.pkl', 'rb')
     except FileNotFoundError:
-        print("Creating file")
+        LOGGER.info("Creating file")
         file = open('times.pkl', 'wb')
         file.close()
     else:
-        times = pickle.load(file)
-        file.close()
+        try:
+            times = pickle.load(file)
+            file.close()
+        except Exception as e:
+            LOGGER.error(e)
 
     dailies(session)
 
+    gmail.notify('done', json.dumps(resultDic))
+
+    mins = randrange(600,1200) + SUCCESS_NEXT_TIME
+    LOGGER.info('Work done, sleeping time '+str(mins)+' ... ')
+    await asyncio.sleep(mins)
+
 def dailies(session):
+    global resultDic
     global times
-    bank.collectInterest(session, times)
-    stocks.buy_stock(session, times)
+    bank.collectInterest(session, times, resultDic)
+    stocks.buy_stock(session, times, resultDic)
     trudysSurprise(session)
-    shrine(session)
-    jelly(session)
-    fishing(session)
-    omelette(session)
-    tdmbgpop(session)
-    healingSprings(session)
-    adventCalendar(session)
+    # shrine(session)
+    # jelly(session)
+    # fishing(session)
+    # omelette(session)
+    # tdmbgpop(session)
+    # healingSprings(session)
+    # adventCalendar(session)
     #sticky(session)
     #tombola(session)
     #fruitMachine(session)
+    # petlab2(session)
+    # islandTraining(session)
+
+def islandTraining(session):
+    global resultDic
+    global times
+    waitTime = 0.5
+    key = "islandTraining"
+    petName = PET_TRAINING_PETNAME
+
+    timeExpiry = times.get(key)
+
+    if timeExpiry == None or time.time() > timeExpiry or True:
+        try:
+            trainingSchool = TrainingSchool(session)
+            shopWizard = ShopWizard(session)
+            payDoneMessage = []
+
+            # Check pet status
+            postFields = {"type" : "complete", "pet_name": petName}
+            result = web.post(session, Constants.NEO_MYSTERY_ISLAND_TRAINING_SCHOOL_END, postFields, Constants.NEO_MYSTERY_ISLAND_TRAINING_SCHOOL_STATUS)
+
+            # Choice pet
+            postFields = {"type" : "start", "course_type": "Level", "pet_name": petName}
+            result = web.post(session, Constants.NEO_MYSTERY_ISLAND_TRAINING_SCHOOL_START, postFields, Constants.NEO_MYSTERY_ISLAND_TRAINING_SCHOOL_COURSES)
+
+            # Check stone(s)
+            response = web.get(session, Constants.NEO_MYSTERY_ISLAND_TRAINING_SCHOOL_STATUS)
+            codestones = trainingSchool.checkStone(response, petName)
+
+            # Buy stone
+            for stone in codestones:
+                price = shopWizard.buy(stone, max_searches=5)
+                payDoneMessage.append(stone+': '+str(price[0]))
+
+            # Pay Stone
+            response = web.get(session, Constants.NEO_MYSTERY_ISLAND_TRAINING_SCHOOL_PAY_STONE+petName)
+
+            resultDic[key] = {petName: payDoneMessage}
+            times[key] = timestamp.getTimestamp(waitTime)
+
+            file = open(r'times.pkl', 'wb')
+            pickle.dump(times, file)
+            file.close()
+        except:
+            resultDic[key] = {petName: "Fail"}
+
+def petlab2(session):
+    global resultDic
+    global times
+    waitTime = 0.5
+    key = "petlab2"
+
+    timeExpiry = times.get(key)
+
+    if timeExpiry == None or time.time() > timeExpiry:
+        try:
+            response = web.get(session, Constants.NEO_PET_LAB2)
+
+            postFields = {"chosen" : PET_LAB2_PETNAME}
+            result = web.post(session, Constants.NEO_PET_LAB2_PROCESS, postFields, Constants.NEO_PET_LAB2)
+
+            LOGGER.info("Pet Lab 2 Done PetName : "+PET_LAB2_PETNAME)
+            resultDic[key] = {PET_LAB2_PETNAME: "Done"}
+
+            times[key] = timestamp.getTimestamp(waitTime)
+
+            file = open(r'times.pkl', 'wb')
+            pickle.dump(times, file)
+            file.close()
+        except:
+            resultDic[key] = {PET_LAB2_PETNAME: "Fail"}
 
 def adventCalendar(session):
     global times
@@ -68,7 +185,7 @@ def adventCalendar(session):
 
             web.post(session, Constants.NEO_PROCESS_ADVENT, {}, Constants.NEO_ADVENT_CALENDAR)
 
-            print("Collected Advent Calendar")
+            LOGGER.info("Collected Advent Calendar")
             times[key] = timestamp.endOfDay()
 
             file = open('times.pkl', 'wb')
@@ -76,6 +193,7 @@ def adventCalendar(session):
             file.close()
 
 def trudysSurprise(session):
+    global resultDic
     global times
 
     key = "trudy"
@@ -91,7 +209,8 @@ def trudysSurprise(session):
         postFields = {"action": "prizeclaimed"}
         web.post(session, Constants.NEO_TRUDYS_SPIN, postFields, Constants.NEO_TRUDYS)
 
-        print("Spun Trudy's Surprise Wheel")
+        LOGGER.info("Spun Trudy's Surprise Wheel")
+        resultDic[key] = {"Spun Trudy's Surprise Wheel": "Done"}
 
         times[key] = timestamp.endOfDay()
 
@@ -112,7 +231,7 @@ def fishing(session):
 
         source = web.post(session, Constants.NEO_FISHING, postFields, Constants.NEO_FISHING)
 
-        print("Went Fishing")
+        LOGGER.info("Went Fishing")
 
         times[key] = timestamp.getTimestamp(waitTime)
 
@@ -136,7 +255,7 @@ def tombola(session):
         postFields = {}
         source = web.post(session, Constants.NEO_TOMBOLA_PLAY, postFields, Constants.NEO_TOMBOLA)
 
-        print("Played Tombola")
+        LOGGER.info("Played Tombola")
 
         times[key] = timestamp.endOfDay()
 
@@ -156,7 +275,7 @@ def tdmbgpop(session):
 
         source = web.post(session, Constants.NEO_TDMBGPOP, postFields, Constants.NEO_TDMBGPOP)
 
-        print("Visited TDMBGPOP")
+        LOGGER.info("Visited TDMBGPOP")
 
         times[key] = timestamp.endOfDay()
 
@@ -165,6 +284,7 @@ def tdmbgpop(session):
         file.close()
 
 def healingSprings(session):
+    global resultDic
     global times
     waitTime = 0.5
     key = "springs"
@@ -177,9 +297,10 @@ def healingSprings(session):
 
         source = web.post(session, Constants.NEO_SPRINGS, postFields, Constants.NEO_SPRINGS)
 
-        print("Went to healing springs")
+        LOGGER.info("Went to healing springs")
 
         times[key] = timestamp.getTimestamp(waitTime)
+        resultDic[key] = {"Went to healing springs": "Done"}
 
         file = open(r'times.pkl', 'wb')
         pickle.dump(times, file)
@@ -195,7 +316,7 @@ def sticky(session):
     if timeExpiry == None or time.time() > timeExpiry:
         response = web.get(session, Constants.NEO_STICKY, Constants.NEO_SPRINGS)
 
-        print("Got Sticky Snowball")
+        LOGGER.info("Got Sticky Snowball")
 
         times[key] = timestamp.getTimestamp(waitTime)
 
@@ -214,7 +335,7 @@ def omelette(session):
 
         source = web.post(session, Constants.NEO_OMELETTE, postFields, Constants.NEO_OMELETTE)
 
-        print("Collected an omelette")
+        LOGGER.info("Collected an omelette")
 
         times[key] = timestamp.endOfDay()
 
@@ -234,7 +355,7 @@ def jelly(session):
 
         source = web.post(session, Constants.NEO_JELLY, postFields, Constants.NEO_JELLY)
 
-        print("Collected Jelly")
+        LOGGER.info("Collected Jelly")
 
         times[key] = timestamp.endOfDay()
 
@@ -267,7 +388,7 @@ def fruitMachine(session):
         file.close()
 
     else:
-        print("Already did fruit machine in last 24 hours")
+        LOGGER.info("Already did fruit machine in last 24 hours")
 
 def shrine(session):
     global times
@@ -283,7 +404,7 @@ def shrine(session):
         postFields = {"type": "approach"}
         source = web.post(session, Constants.NEO_SHRINE, postFields, Constants.NEO_SHRINE)
 
-        print("Went to shrine")
+        LOGGER.info("Went to shrine")
 
         times[key] = timestamp.getTimestamp(waitTime)
 
@@ -292,4 +413,5 @@ def shrine(session):
         file.close()
 
 if __name__ == "__main__":
-    main()
+    while True:
+        asyncio.run(main())        
